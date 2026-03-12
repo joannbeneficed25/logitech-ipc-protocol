@@ -1,6 +1,6 @@
 # logitech-ipc-protocol
 
-Reverse-engineered documentation of the Logi Options+ agent IPC protocol. Enables programmatic control of Logitech multi-host devices (host switching, device queries) without raw HID access.
+Reverse-engineered documentation of the Logi Options+ agent IPC protocol. Enables programmatic control of Logitech multi-host devices (host switching, device queries) without raw HID access, on both macOS and Windows.
 
 The protocol has not been publicly documented before this project.
 
@@ -14,12 +14,16 @@ macOS blocks raw HID access to Bluetooth input devices at the kernel level. No p
 |------|-------------|
 | `logi-options-ipc-reverse-engineering.md` | Full reverse engineering chronicle |
 | `software-kvm-setup.md` | Two-way software KVM setup guide (Windows + Mac) |
-| `switch_to_windows.py` | Switches Logitech devices and monitor input via the IPC protocol |
+| `switch_to_windows.py` | Mac-side script that switches Logitech devices and monitor input via Unix socket IPC |
+| `kvm_daemon_windows.py` | Windows KVM daemon: hotkey listener, device switching via named pipe, monitor switching via DDC/CI |
+| `kvm_config.ini` | Windows daemon configuration (hotkeys, monitor inputs) |
 | `query_feature_index.py` | Discovers HID++ ChangeHost feature index for Logitech devices (Windows) |
 | `query_agent_windows.py` | Queries the agent on Windows via named pipe |
-| `config.ini` | Example UnifiedSwitch configuration |
+| `config.ini` | Legacy UnifiedSwitch configuration (superseded by `kvm_daemon_windows.py`) |
 
-## Usage (Mac)
+## Usage
+
+### Mac
 
 ```bash
 python3 switch_to_windows.py 0        # Switch to host 0 (DisplayPort)
@@ -28,6 +32,23 @@ python3 switch_to_windows.py --dry-run 0  # Show what would happen
 ```
 
 Requires Logi Options+ running and `m1ddc` installed (`brew install m1ddc`).
+
+### Windows
+
+```powershell
+# Persistent daemon with Win+1/2/3 hotkeys (run as Administrator)
+python kvm_daemon_windows.py
+
+# One-shot switch to host 1
+python kvm_daemon_windows.py --switch 1
+
+# Show discovered devices and configured hotkeys without switching
+python kvm_daemon_windows.py --dry-run
+```
+
+Requires Logi Options+ running. Install dependencies: `pip install keyboard pywin32`.
+
+The daemon discovers devices from the agent automatically (no hardcoded device IDs or HID paths). Edit `kvm_config.ini` to configure hotkeys and monitor DDC/CI input values.
 
 ## Protocol
 
@@ -78,7 +99,10 @@ For long-running automation, reconnect on `BrokenPipeError` and re-discover the 
 
 ## Windows HID++ gotchas
 
-These apply when sending HID++ commands directly (not through the agent):
+> These apply when sending HID++ commands directly, not through the agent. `kvm_daemon_windows.py` avoids all of them by going through the agent's named pipe.
+
+<details>
+<summary>Legacy HID++ gotchas (for direct HID access)</summary>
 
 **HID++ collection varies per device.** The MX Master 3S exposes HID++ on COL02. The MX Keys S uses COL05. Both use usage page `FF43:0202`. Verify with:
 ```powershell
@@ -95,6 +119,8 @@ Read: response byte 4 = feature index
 **Device re-pairing changes HID paths.** Switching from Bolt receiver to direct BT LE changes the path entirely. Run `query_agent_windows.py` to get current paths from the agent.
 
 **BT LE GATT vendor collection goes "Unknown."** Windows occasionally fails to initialize the HID++ GATT service. The device works normally but the vendor command channel is dead. Fix: toggle Bluetooth off/on in Windows Settings. This is a Windows/firmware issue.
+
+</details>
 
 ## Tested versions
 
